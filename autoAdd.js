@@ -6,38 +6,36 @@ const child_process = require('child_process');
 const config = require('./src/config');
 const { forStrictNullCheckEligibleFiles } = require('./src/getStrictNullCheckEligibleFiles');
 
-const vscodeRoot = path.join(process.cwd(), process.argv[2]);
-const srcRoot = path.join(vscodeRoot, 'src');
+const codeRoot = path.join(process.cwd(), process.argv[2]);
+const srcRoot = path.join(codeRoot, 'src');
 
 const buildCompletePattern = /Found (\d+) errors?\. Watching for file changes\./gi;
 
-forStrictNullCheckEligibleFiles(vscodeRoot, () => { }).then(async (files) => {
-    const tsconfigPath = path.join(srcRoot, config.targetTsconfig);
-    console.log(tsconfigPath)
-    const child = child_process.spawn('./node_modules/typescript/bin/tsc', ['-p', tsconfigPath, '--watch']);
-    for (const file of files) {
-        await tryAutoAddStrictNulls(child, tsconfigPath, file);
-    }
-    child.kill();
-});
+forStrictNullCheckEligibleFiles(codeRoot, () => { })
+    .then(async (files) => {
+        const tsconfigPath = path.join(codeRoot, config.targetTsconfig);
+        const child = child_process.spawn('tsc', ['-p', tsconfigPath, '--watch']);
+        for (const file of files) {
+            await tryAutoAddStrictNulls(child, tsconfigPath, file);
+        }
+        child.kill();
+    });
 
 function tryAutoAddStrictNulls(child, tsconfigPath, file) {
     return new Promise(resolve => {
-        const relativeFilePath = path.relative(srcRoot, file);
+        const relativeFilePath = path.relative(codeRoot, file);
         console.log(`Trying to auto add '${relativeFilePath}'`);
 
         const originalConifg = JSON.parse(fs.readFileSync(tsconfigPath).toString());
         originalConifg.files = Array.from(new Set(originalConifg.files.sort()));
-        console.log(originalConifg)
+
         // Config on accept
         const newConfig = Object.assign({}, originalConifg);
         newConfig.files = Array.from(new Set(originalConifg.files.concat('./' + relativeFilePath).sort()));
-        console.log('nEW', newConfig)
         fs.writeFileSync(tsconfigPath, JSON.stringify(newConfig, null, '\t'));
 
         const listener = (data) => {
             const textOut = data.toString();
-            console.log('data', textOut)
             const match = buildCompletePattern.exec(textOut);
             if (match) {
                 const errorCount = +match[1];
